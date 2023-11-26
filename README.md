@@ -1,16 +1,19 @@
 # explain_general
 
-A new Flutter project.
+星火Spark桌面小助手快速工具
 
-## Getting Started
+平台: Mac & Windows & Linux 
+ 
+## Getting Started 快速开始
 
-This project is a starting point for a Flutter application.
+1. 在星火平台创建助手并绑定App，获取appId，apiKey等信息。
+2. 配置config.json到特定路径（特定路径不同平台不一样，App打开会提示config路径。）   
+![](image/2023-11-26_224440.png)
 
-A few resources to get you started if this is your first Flutter project:
+使用方法：复制内容，自动调用助手进行解释。
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+## 演示
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+左侧是WSL演示效果，右侧为Windows演示效果。
+
+![Alt text](image/linux&windows.png)
