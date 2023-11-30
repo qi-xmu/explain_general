@@ -138,6 +138,7 @@ class SparkApi {
       );
       var url = ws.createUrl();
       _channel = WebSocketChannel.connect(url);
+      debugPrint(question.text.toString());
       _channel.sink.add(jsonEncode(genParams(sparkApiData.appid, sparkApiData.domain, question)));
     }
   }
@@ -153,7 +154,7 @@ class SparkApi {
       //
       var choices = data['payload']['choices'];
       int status = choices["status"];
-      String content = choices["text"][0]["content"].replaceAll("\n\n", "\n");
+      String content = choices["text"][0]["content"];
       if (status == 0) {
         _content = content;
       } else if (status >= 1) {

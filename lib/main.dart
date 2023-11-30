@@ -1,10 +1,10 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:macos_window_utils/window_manipulator.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:get/get.dart';
 import 'package:oktoast/oktoast.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:async';
@@ -15,10 +15,15 @@ import 'windows.dart';
 var configPath = getApplicationDocumentsDirectory();
 SparkApiData? defaultConfig;
 
+var setting = {
+  "fontSize": 13.0,
+};
+
 void main() async {
   // 测试接口
   // 判断是否为macOS
   initWindowsSize();
+  defaultConfig = readConfig((await configPath));
 
   runApp(const OKToast(child: MyApp()));
 }
@@ -28,8 +33,14 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const CupertinoApp(
-      home: MyHomePage(),
+    return CupertinoApp(
+      debugShowCheckedModeBanner: false,
+      theme: CupertinoThemeData(
+        textTheme: CupertinoTextThemeData(
+          textStyle: TextStyle(color: Colors.black, fontSize: setting["fontSize"], fontFamily: "HarmonyOS"),
+        ),
+      ),
+      home: const MyHomePage(),
     );
   }
 }
@@ -49,146 +60,271 @@ class ClipExplain {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  bool topSwitch = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return const CupertinoPageScaffold(
+      child: SizedBox.expand(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(flex: 2, child: AnswerList()),
+        ]),
+      ),
+    );
+  }
+}
+
+class AnswerList extends StatefulWidget {
+  const AnswerList({super.key});
+
+  @override
+  State<AnswerList> createState() => _AnswerListState();
+}
+
+class _AnswerListState extends State<AnswerList> {
+  final TextEditingController _controller = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  final answerList = <String>["> 复制以开始"].obs; // 答案
+  final selectedIndex = <int>[].obs;
   late Timer timer;
 
-  bool state = false;
+  String _clipContent = ""; // 剪贴板内容
+  bool genState = false;
   bool topSwitch = true;
-  double fontsize = 12.5;
-  String _clipContent = "";
-  String _answer = "【复制文字以开始】";
-
-  final TextEditingController _controller = TextEditingController();
-
-  _handleKeyPress(RawKeyEvent event) {
-    final bool isCtrlPressed = event.isControlPressed;
-    final bool isCKeyPressed = event.logicalKey == LogicalKeyboardKey.keyS;
-    if (isCtrlPressed && isCKeyPressed) {
-      _copy();
-    }
-  }
-
-  _copy() {
-    if (state == false && _answer != "【复制文字以开始】") {
-      Clipboard.setData(ClipboardData(text: _answer));
-      showToast("已复制到剪贴板");
-    } else {
-      showToast("正在生成中");
-    }
-  }
+  bool manualState = false;
+  bool startState = true;
 
   @override
   void initState() {
     super.initState();
-    RawKeyboard.instance.addListener(_handleKeyPress);
+    clipboardTask();
+  }
 
-    Clipboard.getData(Clipboard.kTextPlain).then((value) => _clipContent = value?.text ?? "");
+  @override
+  void dispose() {
+    super.dispose();
+    timer.cancel();
+  }
+
+  // 判断是否请求
+  bool isRequest(String text) {
+    if (startState == false) {
+      return false;
+    }
+    if (answerList.contains(text)) {
+      return false;
+    }
+    var res = genState == false && text != _clipContent;
+    if (res) {
+      _clipContent = text;
+      _controller.text = _clipContent;
+    }
+    return res;
+  }
+
+  // answerList state
+  void recvSparkApi(SparkApi sparkApi) {
+    sparkApi.stream.listen((event) {
+      var data = jsonDecode(event);
+      var (status, ans) = sparkApi.parseParams(data);
+      answerList.value = ans.split('。\n\n').map((e) => '$e。').toList();
+      answerList.last = answerList.last.substring(0, answerList.last.length - 1);
+      if (status == 0) {
+        genState = true;
+      } else if (status == 2) {
+        genState = false;
+      }
+    });
+  }
+
+  void clipboardTask() {
     timer = Timer.periodic(const Duration(seconds: 1), (Timer t) async {
       ClipboardData? clipdata = await Clipboard.getData(Clipboard.kTextPlain);
-      if (state == false &&
-          clipdata != null &&
-          clipdata.text != _clipContent &&
-          clipdata.text != "" &&
-          clipdata.text != _answer) {
+      if (clipdata != null && isRequest(clipdata.text!)) {
+        debugPrint("clipboardTask: ${clipdata.text}");
+        selectedIndex.clear();
+
         if (defaultConfig == null) {
-          //
           defaultConfig = readConfig((await configPath));
           showToast("请先配置: ${(await configPath).path}/config.json");
           return;
         }
-        // 请求AI接口
-        debugPrint(clipdata.text!);
-        _clipContent = clipdata.text!;
-        _controller.text = _clipContent;
+        manualState = false;
         var sparkApi = SparkApi(GenerateText()..addText('user', _clipContent), defaultConfig!);
-        sparkApi.stream.listen((event) {
-          var data = jsonDecode(event);
-          var (status, ans) = sparkApi.parseParams(data);
-          if (status == 0) {
-            if (Platform.isMacOS) {
-              WindowManipulator.setDocumentEdited();
-            }
-            state = true;
-          } else if (status == 1) {
-            _answer += ans;
-          } else if (status == 2) {
-            if (Platform.isMacOS) {
-              WindowManipulator.setDocumentUnedited();
-            }
-            state = false;
-          }
-          setState(() {
-            _answer = ans;
-          });
-        });
+        recvSparkApi(sparkApi);
       }
     });
   }
 
   @override
-  void dispose() {
-    timer.cancel();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      CupertinoTextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        minLines: 3,
+        maxLines: 5,
+        suffix: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: manualState ? 60 : 0,
+          child: manualState
+              ? TextButton(
+                  onPressed: () {
+                    var content = _controller.text;
+                    var sparkApi = SparkApi(GenerateText()..addText('user', content), defaultConfig!);
+                    recvSparkApi(sparkApi);
+                    setState(() {
+                      manualState = false;
+                    });
+                  },
+                  child: Text(
+                    "发送",
+                    style: TextStyle(fontSize: setting['fontSize'], fontFamily: "HarmonyOS"),
+                  ),
+                )
+              : const SizedBox(),
+        ),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(0),
+        ),
+        placeholder: "回车以搜索...",
+        onChanged: (String? value) {
+          setState(() {
+            manualState = !(value == null || value.isEmpty);
+          });
+        },
+        style: const TextStyle(height: 1.2),
+      ),
+      const Divider(),
+      Expanded(
+        child: AnswerBox(
+          answer: answerList,
+          selectedIndex: selectedIndex,
+        ),
+      ),
+      const Divider(),
+      SizedBox(
+        child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Switch(
+            value: topSwitch,
+            onChanged: (bool value) {
+              windowAlwaysOnTop(value);
+              showToast(value ? "置顶模式" : "非置顶模式");
+              setState(() {
+                topSwitch = value;
+              });
+            },
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                startState = !startState;
+              });
+              if (startState) {
+                showToast("已启用");
+              } else {
+                showToast("已禁用");
+              }
+            },
+            child: Text(
+              startState ? "💜 已启用 💜" : "Spark AI built by @qi-xmu\nVersion: 2023-12-01(101)",
+              style: const TextStyle(fontSize: 11, fontFamily: "HarmonyOS"),
+            ),
+          ),
+          TextButton(
+              onPressed: () {
+                if (selectedIndex.isEmpty) {
+                  var clipData = answerList.map((element) => element).toList();
+                  showToast("复制全部:OK");
+                  Clipboard.setData(ClipboardData(text: clipData[0]));
+                } else {
+                  var clipData = selectedIndex.map((element) => answerList[element]).toList();
+                  showToast("复制选中:OK");
+                  Clipboard.setData(ClipboardData(text: clipData[0]));
+                }
+              },
+              child: const Text("复制"))
+        ]),
+      ),
+    ]);
   }
+}
+
+class AnswerBox extends StatelessWidget {
+  final List<String> answer;
+  final RxList<int> selectedIndex;
+  const AnswerBox({super.key, required this.answer, required this.selectedIndex});
 
   @override
   Widget build(BuildContext context) {
-    return CupertinoPageScaffold(
-      child: SizedBox.expand(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          SingleChildScrollView(
-            child: CupertinoTextField(
-              controller: _controller,
-              minLines: 3,
-              maxLines: 5,
-              style: TextStyle(fontSize: fontsize, fontFamily: "HarmonyOS"),
+    return Obx(
+      () => ListView.builder(
+        scrollDirection: Axis.vertical,
+        itemCount: answer.length,
+        itemBuilder: (context, index) => GestureDetector(
+          child: Obx(
+            () => LineCard(
+              key: ValueKey(answer[index]),
+              index: index,
+              line: answer[index],
+              selected: selectedIndex.contains(index),
             ),
           ),
-          Expanded(
-              flex: 2,
-              child: SingleChildScrollView(
-                child: Card(
-                    child: Padding(
-                        padding: const EdgeInsets.all(10.0),
-                        child: SelectableText(_answer, style: TextStyle(fontSize: fontsize, fontFamily: "HarmonyOS")))),
-              )),
-          const Divider(),
-          SizedBox(
-            height: 40,
-            child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-              Switch(
-                value: topSwitch,
-                onChanged: (bool value) {
-                  if (value == true) {
-                    windowAlwaysOnTop(true);
-                    showToast("置顶模式");
-                  } else {
-                    windowAlwaysOnTop(false);
-                    showToast("非置顶模式");
-                  }
-                  setState(() {
-                    topSwitch = value;
-                  });
-                },
-              ),
-              TextButton(
-                onPressed: () async {
-                  showToast((await configPath).path);
-                },
-                child: const Text("Spark AI built by @qi-xmu",
-                    // 斜体 透明度 紫色
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontFamily: "HarmonyOS",
-                      color: Color.fromRGBO(0, 0, 0, 0.5),
-                    )),
-              ),
-              TextButton(
-                onPressed: () => _copy(),
-                child: const Text("复制", style: TextStyle(fontFamily: "HarmonyOS")),
-              ),
-            ]),
+          onTap: () {
+            debugPrint("onTap: $selectedIndex");
+            if (selectedIndex.contains(index)) {
+              selectedIndex.remove(index);
+            } else {
+              selectedIndex.add(index);
+            }
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class LineCard extends StatelessWidget {
+  final int index;
+  final String line;
+  final bool selected;
+  const LineCard({super.key, required this.index, required this.line, required this.selected});
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      color: selected ? Colors.deepPurple[50] : Colors.white,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: selected ? Colors.deepPurple[300]! : Colors.deepPurple[50]!, width: 3),
+        borderRadius: BorderRadius.circular(10.0),
+      ),
+      child: Markdown(
+        data: line,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(8.0),
+        styleSheet: MarkdownStyleSheet(
+          p: TextStyle(fontSize: setting["fontSize"], fontFamily: "HarmonyOS"),
+          codeblockPadding: const EdgeInsets.all(6.0),
+          code: TextStyle(
+            fontSize: setting["fontSize"],
+            backgroundColor: Colors.transparent,
+            fontFamily: "CodeMono",
           ),
-        ]),
+          listIndent: 22,
+          blockSpacing: 4,
+          codeblockDecoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Colors.deepPurple[50]!, width: 1),
+            borderRadius: BorderRadius.circular(10.0),
+          ),
+          blockquoteDecoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Colors.deepPurple[50]!, width: 1),
+            borderRadius: BorderRadius.circular(10.0),
+          ),
+        ),
       ),
     );
   }
