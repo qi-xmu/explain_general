@@ -91,13 +91,21 @@ class _AnswerListState extends State<AnswerList> {
   late String _clipContent; // 剪贴板内容
   bool genState = false;
   bool topSwitch = true;
-  bool editMode = false;
+  var editMode = false.obs;
   bool startState = true;
+  bool selfCopy = false;
 
   @override
   void initState() {
     super.initState();
     clipboardTask();
+    RawKeyboard.instance.addListener((RawKeyEvent event) {
+      if (event.isKeyPressed(LogicalKeyboardKey.enter) && event.isControlPressed) {
+        _controller.text = _controller.text.trim();
+        _focusNode.unfocus();
+        _editModeSend();
+      }
+    });
   }
 
   @override
@@ -111,7 +119,10 @@ class _AnswerListState extends State<AnswerList> {
     if (startState == false) {
       return false;
     }
-    if (answerList.contains(text)) {
+    if (selfCopy) {
+      // 复制自己的内容
+      _clipContent = text;
+      selfCopy = false;
       return false;
     }
     var res = genState == false && text != _clipContent;
@@ -157,7 +168,7 @@ class _AnswerListState extends State<AnswerList> {
       var content = await getClipboardText();
       if (isRequest(content)) {
         selectedIndex.clear();
-        editMode = false;
+        editMode.value = false;
         callSparkApi(GenerateText()..addText('user', content));
       }
     });
@@ -165,7 +176,7 @@ class _AnswerListState extends State<AnswerList> {
 
   void _editModeSend() {
     var content = _controller.text;
-    editMode = false;
+    editMode.value = false;
     callSparkApi(GenerateText()..addText('user', content));
   }
 
@@ -177,27 +188,25 @@ class _AnswerListState extends State<AnswerList> {
         focusNode: _focusNode,
         minLines: 3,
         maxLines: 5,
-        suffix: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: editMode ? 60 : 0,
-          child: editMode
-              ? TextButton(
-                  onPressed: () => _editModeSend(),
-                  child: Text(
-                    "发送",
-                    style: TextStyle(fontSize: setting['fontSize'], fontFamily: "HarmonyOS"),
-                  ),
-                )
-              : const SizedBox(),
-        ),
+        suffix: Obx(() => AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: editMode.value ? 60 : 0,
+              child: editMode.value
+                  ? TextButton(
+                      onPressed: () => _editModeSend(),
+                      child: Text(
+                        "发送",
+                        style: TextStyle(fontSize: setting['fontSize'], fontFamily: "HarmonyOS"),
+                      ),
+                    )
+                  : const SizedBox(),
+            )),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(0),
         ),
         placeholder: "编辑模式...",
         onChanged: (String? value) {
-          setState(() {
-            editMode = !(value == null || value.isEmpty);
-          });
+          editMode.value = !(value == null || value.isEmpty);
         },
         style: const TextStyle(height: 1.2),
       ),
@@ -239,15 +248,18 @@ class _AnswerListState extends State<AnswerList> {
           ),
           TextButton(
               onPressed: () {
+                String content;
                 if (selectedIndex.isEmpty) {
-                  var clipData = answerList.map((element) => element).toList();
                   showToast("复制全部:OK");
-                  Clipboard.setData(ClipboardData(text: clipData[0]));
+                  var clipData = answerList.map((element) => element).toList();
+                  content = clipData.join("\n");
                 } else {
-                  var clipData = selectedIndex.map((element) => answerList[element]).toList();
                   showToast("复制选中:OK");
-                  Clipboard.setData(ClipboardData(text: clipData[0]));
+                  var clipData = selectedIndex.map((element) => answerList[element]).toList();
+                  content = clipData.join("\n");
                 }
+                selfCopy = true;
+                Clipboard.setData(ClipboardData(text: content));
               },
               child: const Text("复制", style: TextStyle(fontFamily: "HarmonyOS")))
         ]),
