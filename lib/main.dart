@@ -249,7 +249,7 @@ class _AnswerListState extends State<AnswerList> {
                   Clipboard.setData(ClipboardData(text: clipData[0]));
                 }
               },
-              child: const Text("复制"))
+              child: const Text("复制", style: TextStyle(fontFamily: "HarmonyOS")))
         ]),
       ),
     ]);
