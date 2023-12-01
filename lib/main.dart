@@ -88,10 +88,10 @@ class _AnswerListState extends State<AnswerList> {
   final selectedIndex = <int>[].obs;
   late Timer timer;
 
-  String _clipContent = ""; // 剪贴板内容
+  late String _clipContent; // 剪贴板内容
   bool genState = false;
   bool topSwitch = true;
-  bool manualState = false;
+  bool editMode = false;
   bool startState = true;
 
   @override
@@ -123,7 +123,13 @@ class _AnswerListState extends State<AnswerList> {
   }
 
   // answerList state
-  void recvSparkApi(SparkApi sparkApi) {
+  void callSparkApi(GenerateText text) async {
+    if (defaultConfig == null) {
+      defaultConfig = readConfig((await configPath));
+      showToast("请先配置: ${(await configPath).path}/config.json");
+      return;
+    }
+    var sparkApi = SparkApi(text, defaultConfig!);
     sparkApi.stream.listen((event) {
       var data = jsonDecode(event);
       var (status, ans) = sparkApi.parseParams(data);
@@ -137,23 +143,30 @@ class _AnswerListState extends State<AnswerList> {
     });
   }
 
-  void clipboardTask() {
-    timer = Timer.periodic(const Duration(seconds: 1), (Timer t) async {
-      ClipboardData? clipdata = await Clipboard.getData(Clipboard.kTextPlain);
-      if (clipdata != null && isRequest(clipdata.text!)) {
-        debugPrint("clipboardTask: ${clipdata.text}");
-        selectedIndex.clear();
+  Future<String> getClipboardText() async {
+    var data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (data == null || data.text == null) {
+      return "";
+    }
+    return data.text!;
+  }
 
-        if (defaultConfig == null) {
-          defaultConfig = readConfig((await configPath));
-          showToast("请先配置: ${(await configPath).path}/config.json");
-          return;
-        }
-        manualState = false;
-        var sparkApi = SparkApi(GenerateText()..addText('user', _clipContent), defaultConfig!);
-        recvSparkApi(sparkApi);
+  void clipboardTask() async {
+    _clipContent = await getClipboardText();
+    timer = Timer.periodic(const Duration(seconds: 1), (Timer t) async {
+      var content = await getClipboardText();
+      if (isRequest(content)) {
+        selectedIndex.clear();
+        editMode = false;
+        callSparkApi(GenerateText()..addText('user', content));
       }
     });
+  }
+
+  void _editModeSend() {
+    var content = _controller.text;
+    editMode = false;
+    callSparkApi(GenerateText()..addText('user', content));
   }
 
   @override
@@ -166,17 +179,10 @@ class _AnswerListState extends State<AnswerList> {
         maxLines: 5,
         suffix: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
-          width: manualState ? 60 : 0,
-          child: manualState
+          width: editMode ? 60 : 0,
+          child: editMode
               ? TextButton(
-                  onPressed: () {
-                    var content = _controller.text;
-                    var sparkApi = SparkApi(GenerateText()..addText('user', content), defaultConfig!);
-                    recvSparkApi(sparkApi);
-                    setState(() {
-                      manualState = false;
-                    });
-                  },
+                  onPressed: () => _editModeSend(),
                   child: Text(
                     "发送",
                     style: TextStyle(fontSize: setting['fontSize'], fontFamily: "HarmonyOS"),
@@ -187,10 +193,10 @@ class _AnswerListState extends State<AnswerList> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(0),
         ),
-        placeholder: "回车以搜索...",
+        placeholder: "编辑模式...",
         onChanged: (String? value) {
           setState(() {
-            manualState = !(value == null || value.isEmpty);
+            editMode = !(value == null || value.isEmpty);
           });
         },
         style: const TextStyle(height: 1.2),
