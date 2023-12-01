@@ -125,12 +125,12 @@ class _AnswerListState extends State<AnswerList> {
       selfCopy = false;
       return false;
     }
-    var res = genState == false && text != _clipContent;
-    if (res) {
+    if (genState == false && text != _clipContent && text.isNotEmpty) {
       _clipContent = text;
       _controller.text = _clipContent;
+      return true;
     }
-    return res;
+    return false;
   }
 
   // answerList state
