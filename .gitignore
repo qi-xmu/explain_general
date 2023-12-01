@@ -44,3 +44,5 @@ app.*.map.json
 
 
 config.json
+*.zip
+*.app
