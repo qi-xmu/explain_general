@@ -95,15 +95,43 @@ class _AnswerListState extends State<AnswerList> {
   bool startState = true;
   bool selfCopy = false;
 
+  void _keyBoardCtrlEnter() {
+    _controller.text = _controller.text.trim();
+    _focusNode.unfocus();
+    _editModeSend();
+  }
+
+  void _keyBoardCtrlC() {
+    _copyPressed();
+  }
+
+  void _setFontSize(double size) {
+    setting["fontSize"] = size;
+    showToast("字体大小: ${setting["fontSize"]}", position: ToastPosition.bottom);
+    setState(() {});
+  }
+
+  void _keyBoardCtrlAdd() {
+    _setFontSize(setting["fontSize"]! + 1.0);
+  }
+
+  void _keyBoardCtrlSub() {
+    _setFontSize(setting["fontSize"]! - 1.0);
+  }
+
   @override
   void initState() {
     super.initState();
     clipboardTask();
     RawKeyboard.instance.addListener((RawKeyEvent event) {
       if (event.isKeyPressed(LogicalKeyboardKey.enter) && event.isControlPressed) {
-        _controller.text = _controller.text.trim();
-        _focusNode.unfocus();
-        _editModeSend();
+        _keyBoardCtrlEnter();
+      } else if (event.isKeyPressed(LogicalKeyboardKey.keyC) && event.isControlPressed) {
+        _keyBoardCtrlC();
+      } else if (event.isKeyPressed(LogicalKeyboardKey.equal) && event.isControlPressed) {
+        _keyBoardCtrlAdd();
+      } else if (event.isKeyPressed(LogicalKeyboardKey.minus) && event.isControlPressed) {
+        _keyBoardCtrlSub();
       }
     });
   }
@@ -119,7 +147,7 @@ class _AnswerListState extends State<AnswerList> {
     if (startState == false) {
       return false;
     }
-    if (selfCopy) {
+    if (selfCopy || answerList.contains(text)) {
       // 复制自己的内容
       _clipContent = text;
       selfCopy = false;
@@ -180,6 +208,21 @@ class _AnswerListState extends State<AnswerList> {
     callSparkApi(GenerateText()..addText('user', content));
   }
 
+  void _copyPressed() {
+    String content;
+    if (selectedIndex.isEmpty) {
+      showToast("复制全部:OK");
+      var clipData = answerList.map((element) => element).toList();
+      content = clipData.join("\n");
+    } else {
+      showToast("复制选中:OK");
+      var clipData = selectedIndex.map((element) => answerList[element]).toList();
+      content = clipData.join("\n");
+    }
+    selfCopy = true;
+    Clipboard.setData(ClipboardData(text: content));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -188,6 +231,7 @@ class _AnswerListState extends State<AnswerList> {
         focusNode: _focusNode,
         minLines: 3,
         maxLines: 5,
+        placeholder: "编辑模式...",
         suffix: Obx(() => AnimatedContainer(
               duration: const Duration(milliseconds: 200),
               width: editMode.value ? 60 : 0,
@@ -204,11 +248,10 @@ class _AnswerListState extends State<AnswerList> {
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(0),
         ),
-        placeholder: "编辑模式...",
         onChanged: (String? value) {
           editMode.value = !(value == null || value.isEmpty);
         },
-        style: const TextStyle(height: 1.2),
+        style: TextStyle(height: 1.2, fontSize: setting['fontSize'], fontFamily: "HarmonyOS"),
       ),
       const Divider(),
       Expanded(
@@ -242,26 +285,14 @@ class _AnswerListState extends State<AnswerList> {
               }
             },
             child: Text(
-              startState ? "💜 已启用 💜" : "Spark AI built by @qi-xmu\nVersion: 2023-12-01(101)",
+              startState ? "💜 已启用 💜" : "Spark AI built by @qi-xmu\nVersion: 2023-12-01(102)",
               style: const TextStyle(fontSize: 11, fontFamily: "HarmonyOS"),
             ),
           ),
           TextButton(
-              onPressed: () {
-                String content;
-                if (selectedIndex.isEmpty) {
-                  showToast("复制全部:OK");
-                  var clipData = answerList.map((element) => element).toList();
-                  content = clipData.join("\n");
-                } else {
-                  showToast("复制选中:OK");
-                  var clipData = selectedIndex.map((element) => answerList[element]).toList();
-                  content = clipData.join("\n");
-                }
-                selfCopy = true;
-                Clipboard.setData(ClipboardData(text: content));
-              },
-              child: const Text("复制", style: TextStyle(fontFamily: "HarmonyOS")))
+            onPressed: () => _copyPressed(),
+            child: const Text("复制", style: TextStyle(fontFamily: "HarmonyOS")),
+          )
         ]),
       ),
     ]);
@@ -272,6 +303,15 @@ class AnswerBox extends StatelessWidget {
   final List<String> answer;
   final RxList<int> selectedIndex;
   const AnswerBox({super.key, required this.answer, required this.selectedIndex});
+
+  _handleTap(int index) {
+    debugPrint("onTap: $selectedIndex");
+    if (selectedIndex.contains(index)) {
+      selectedIndex.remove(index);
+    } else {
+      selectedIndex.add(index);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -288,14 +328,7 @@ class AnswerBox extends StatelessWidget {
               selected: selectedIndex.contains(index),
             ),
           ),
-          onTap: () {
-            debugPrint("onTap: $selectedIndex");
-            if (selectedIndex.contains(index)) {
-              selectedIndex.remove(index);
-            } else {
-              selectedIndex.add(index);
-            }
-          },
+          onTap: () => _handleTap(index),
         ),
       ),
     );
