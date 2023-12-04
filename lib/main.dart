@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
@@ -124,10 +125,19 @@ class _AnswerListState extends State<AnswerList> {
     super.initState();
     clipboardTask();
     RawKeyboard.instance.addListener((RawKeyEvent event) {
+      if (Platform.isMacOS) {
+        // Meta + C
+        if (event.isKeyPressed(LogicalKeyboardKey.keyC) && event.isMetaPressed) {
+          _keyBoardCtrlC();
+        }
+      } else {
+        // Ctrl + C
+        if (event.isKeyPressed(LogicalKeyboardKey.keyC) && event.isControlPressed) {
+          _keyBoardCtrlC();
+        }
+      }
       if (event.isKeyPressed(LogicalKeyboardKey.enter) && event.isControlPressed) {
         _keyBoardCtrlEnter();
-      } else if (event.isKeyPressed(LogicalKeyboardKey.keyC) && event.isControlPressed) {
-        _keyBoardCtrlC();
       } else if (event.isKeyPressed(LogicalKeyboardKey.equal) && event.isControlPressed) {
         _keyBoardCtrlAdd();
       } else if (event.isKeyPressed(LogicalKeyboardKey.minus) && event.isControlPressed) {
@@ -215,6 +225,7 @@ class _AnswerListState extends State<AnswerList> {
       var clipData = answerList.map((element) => element).toList();
       content = clipData.join("\n");
     } else {
+      selectedIndex.sort();
       showToast("复制选中:OK");
       var clipData = selectedIndex.map((element) => answerList[element]).toList();
       content = clipData.join("\n");
