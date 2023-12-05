@@ -288,6 +288,7 @@ class _AnswerListState extends State<AnswerList> {
             onPressed: () {
               setState(() {
                 startState = !startState;
+                selfCopy = true;
               });
               if (startState) {
                 showToast("已启用");
